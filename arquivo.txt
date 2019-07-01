@@ -1,0 +1,437 @@
+dim cnt as byte
+dim oldstate as boolean
+dim state as boolean
+dim lngCounter as longint
+dim secs as integer
+dim minutes as integer
+dim hours as integer
+
+dim blnHighState as boolean
+dim blnLowState as boolean
+dim blnAlarmState as boolean
+dim blnAlarmSignal as boolean
+
+sub procedure sendBit(dim b as boolean)
+  if (b) then
+    gpio.2 = 1
+    delay_us(1125)
+    gpio.2 = 0
+    delay_us(375)
+  else
+    gpio.2 = 1
+    delay_us(375)
+    gpio.2 = 0
+    delay_us(1125)
+  end if
+end sub
+
+sub procedure sendBit2(dim b as boolean)
+  if (b) then
+    gpio.2 = 1
+    delay_us(1125)
+    gpio.2 = 0
+    delay_us(375)
+  else
+    gpio.2 = 1
+    delay_us(375)
+    gpio.2 = 0
+    delay_us(1125)
+  end if
+end sub
+
+sub procedure sendPair(dim b as boolean)
+  sendBit(false)
+  sendBit(b)
+end sub
+
+sub procedure sendPair2(dim b as boolean)
+  sendBit2(false)
+  sendBit2(b)
+end sub
+
+sub procedure switchcode2(dim b as boolean)
+  '// house code 1 = B
+  sendPair2(true)
+  sendPair2(false)
+  sendPair2(false)
+  sendPair2(false)
+  '// unit code 2
+  sendPair2(true)
+  sendPair2(false)
+  sendPair2(false)
+  sendPair2(false)
+  '// on = 14
+  sendPair2(false)
+  sendPair2(true)
+  sendPair2(true)
+  sendPair2(b)
+  sendBit2(false)
+end sub
+
+sub procedure switchcode(dim b as boolean)
+  '// house code 1 = B
+  sendPair(true)
+  sendPair(false)
+  sendPair(false)
+  sendPair(false)
+  '// unit code 2
+  sendPair(true)
+  sendPair(false)
+  sendPair(false)
+  sendPair(false)
+  '// on = 14
+  sendPair(false)
+  sendPair(true)
+  sendPair(true)
+  sendPair(b)
+  sendBit(false)
+end sub
+
+sub procedure transmit(dim b as boolean)
+  switchcode(b)
+  delay_us(10000)
+  switchcode(b)
+  delay_us(10000)
+  switchcode(b)
+end sub
+
+sub procedure transmit2(dim b as boolean)
+  switchcode2(b)
+  delay_us(10000)
+  switchcode2(b)
+  delay_us(10000)
+  switchcode2(b)
+end sub
+
+sub procedure interrupt
+
+   TMR0   = 96
+   INTCON = $20          ' set T0IE, claer T0IF
+  'scan input pin
+    if Button(GPIO, 5, 10, 1) then
+            state = true
+    else
+            state = false
+    end if
+
+     if state <> oldstate then
+           if state = true then
+              ' change true/false below depending on whether your
+              ' device goes high or low on triggering.
+                transmit2(false)
+                oldstate = state
+           end if
+
+           if state = false then
+               ' send the opposite of above (change if required)
+                transmit2(true)
+                oldstate = state
+            end if
+     end if
+
+end sub
+
+main:
+  OPTION_REG = $84       ' assign prescaler to TMR0
+  'TRISIO  =   0          ' designate gpio as output
+  TRISIO = %00100000          ' configure pin 5 of GPIO as input
+  GPIO    = $0          ' initialize gpio
+  cnt     =   0          ' initialize cnt
+  TMR0    =  96
+
+    lngCounter = 1
+    transmit(true)
+    delay_ms(3000)
+    transmit(false)
+
+  INTCON  = $A0          ' enable TMRO interrupt
+  secs=0                 ' init seconds counter
+
+  '// ------------------------------------------------------------------
+  '// Our input pin 2 (GPIO 5) can respond to when the device attached
+  '// changes state (either from high to low, or low to high)
+  '//
+  '// You might want to reverse this logic, so that you can send an ON
+  '// when the line goes low for example, or vice versa.
+  '//
+  '// Configure below as follows:
+  '//
+  '// blnHighState = what signal to TX when the input wire is high (+5v)
+  '// blnLowState  = what signal to TX when the input wire is low  (0v)
+  '// blnAlarmState = what signal is most important (repeat every 10min)
+  '// blnAlarmSignal= what is the signal (ON (true) or OFF (false))
+  '//
+  '// set these to true/false where true is BBSB ON, and false is OFF.
+
+  blnHighState = false   '// off when line high
+  blnLowState = true     '// on  when line low.
+ 
+  blnAlarmState = false  '// what is the state we're most interested in?
+                         '// e.g 'the house is flooding with water'
+                         '// this state is repeated every 10 minutes
+                         '// the opposite 'the house is dry' is only
+                         '// repeated every 12 hours as a 'my battery is ok'
+                         '// message.
+                        
+  blnAlarmSignal = true  '// send this code if the alarm state is true.
+  '// ------------------------------------------------------------------
+
+  do                             '// begin infinite loop..
+
+   lngCounter = lngCounter + 1
+   if lngCounter = 11377 Then    '// count cycles in a second
+     secs = secs + 1             '// increment seconds counter
+     lngCounter = 0
+   end if
+
+   if secs = 60 then             '// minutes..
+      secs = 0
+      minutes = minutes +1
+   end if
+
+   if minutes = 10 then
+      if state = blnAlarmState then
+         '// we are STILL in the 'alarm' state, so send the required
+         '// signal every 10 minutes..
+         transmit(blnAlarmSignal)
+      end if
+   end if
+  
+   if minutes = 60 then                  '// 1 minute
+     hours = hours + 1
+     minutes = 0
+   end if
+
+   if hours = 12 then                    '// 12 hours..
+      hours = 0
+      if state <> blnAlarmState then
+         if(blnAlarmSignal = true) then
+             transmit(false)
+         else
+             transmit(true)
+         end if
+        oldstate = state
+      end if
+   end if
+  
+  loop until 0 = 1
+end.
+
+dim cnt as byte
+dim oldstate as boolean
+dim state as boolean
+dim lngCounter as longint
+dim secs as integer
+dim minutes as integer
+dim hours as integer
+
+dim blnHighState as boolean
+dim blnLowState as boolean
+dim blnAlarmState as boolean
+dim blnAlarmSignal as boolean
+
+sub procedure sendBit(dim b as boolean)
+  if (b) then
+    gpio.2 = 1
+    delay_us(1125)
+    gpio.2 = 0
+    delay_us(375)
+  else
+    gpio.2 = 1
+    delay_us(375)
+    gpio.2 = 0
+    delay_us(1125)
+  end if
+end sub
+
+sub procedure sendBit2(dim b as boolean)
+  if (b) then
+    gpio.2 = 1
+    delay_us(1125)
+    gpio.2 = 0
+    delay_us(375)
+  else
+    gpio.2 = 1
+    delay_us(375)
+    gpio.2 = 0
+    delay_us(1125)
+  end if
+end sub
+
+sub procedure sendPair(dim b as boolean)
+  sendBit(false)
+  sendBit(b)
+end sub
+
+sub procedure sendPair2(dim b as boolean)
+  sendBit2(false)
+  sendBit2(b)
+end sub
+
+sub procedure switchcode2(dim b as boolean)
+  '// house code 1 = B
+  sendPair2(true)
+  sendPair2(false)
+  sendPair2(false)
+  sendPair2(false)
+  '// unit code 2
+  sendPair2(true)
+  sendPair2(false)
+  sendPair2(false)
+  sendPair2(false)
+  '// on = 14
+  sendPair2(false)
+  sendPair2(true)
+  sendPair2(true)
+  sendPair2(b)
+  sendBit2(false)
+end sub
+
+sub procedure switchcode(dim b as boolean)
+  '// house code 1 = B
+  sendPair(true)
+  sendPair(false)
+  sendPair(false)
+  sendPair(false)
+  '// unit code 2
+  sendPair(true)
+  sendPair(false)
+  sendPair(false)
+  sendPair(false)
+  '// on = 14
+  sendPair(false)
+  sendPair(true)
+  sendPair(true)
+  sendPair(b)
+  sendBit(false)
+end sub
+
+sub procedure transmit(dim b as boolean)
+  switchcode(b)
+  delay_us(10000)
+  switchcode(b)
+  delay_us(10000)
+  switchcode(b)
+end sub
+
+sub procedure transmit2(dim b as boolean)
+  switchcode2(b)
+  delay_us(10000)
+  switchcode2(b)
+  delay_us(10000)
+  switchcode2(b)
+end sub
+
+sub procedure interrupt
+
+   TMR0   = 96
+   INTCON = $20          ' set T0IE, claer T0IF
+  'scan input pin
+    if Button(GPIO, 5, 10, 1) then
+            state = true
+    else
+            state = false
+    end if
+
+     if state <> oldstate then
+           if state = true then
+              ' change true/false below depending on whether your
+              ' device goes high or low on triggering.
+                transmit2(false)
+                oldstate = state
+           end if
+
+           if state = false then
+               ' send the opposite of above (change if required)
+                transmit2(true)
+                oldstate = state
+            end if
+     end if
+
+end sub
+
+main:
+  OPTION_REG = $84       ' assign prescaler to TMR0
+  'TRISIO  =   0          ' designate gpio as output
+  TRISIO = %00100000          ' configure pin 5 of GPIO as input
+  GPIO    = $0          ' initialize gpio
+  cnt     =   0          ' initialize cnt
+  TMR0    =  96
+
+    lngCounter = 1
+    transmit(true)
+    delay_ms(3000)
+    transmit(false)
+
+  INTCON  = $A0          ' enable TMRO interrupt
+  secs=0                 ' init seconds counter
+
+  '// ------------------------------------------------------------------
+  '// Our input pin 2 (GPIO 5) can respond to when the device attached
+  '// changes state (either from high to low, or low to high)
+  '//
+  '// You might want to reverse this logic, so that you can send an ON
+  '// when the line goes low for example, or vice versa.
+  '//
+  '// Configure below as follows:
+  '//
+  '// blnHighState = what signal to TX when the input wire is high (+5v)
+  '// blnLowState  = what signal to TX when the input wire is low  (0v)
+  '// blnAlarmState = what signal is most important (repeat every 10min)
+  '// blnAlarmSignal= what is the signal (ON (true) or OFF (false))
+  '//
+  '// set these to true/false where true is BBSB ON, and false is OFF.
+
+  blnHighState = false   '// off when line high
+  blnLowState = true     '// on  when line low.
+ 
+  blnAlarmState = false  '// what is the state we're most interested in?
+                         '// e.g 'the house is flooding with water'
+                         '// this state is repeated every 10 minutes
+                         '// the opposite 'the house is dry' is only
+                         '// repeated every 12 hours as a 'my battery is ok'
+                         '// message.
+                        
+  blnAlarmSignal = true  '// send this code if the alarm state is true.
+  '// ------------------------------------------------------------------
+
+  do                             '// begin infinite loop..
+
+   lngCounter = lngCounter + 1
+   if lngCounter = 11377 Then    '// count cycles in a second
+     secs = secs + 1             '// increment seconds counter
+     lngCounter = 0
+   end if
+
+   if secs = 60 then             '// minutes..
+      secs = 0
+      minutes = minutes +1
+   end if
+
+   if minutes = 10 then
+      if state = blnAlarmState then
+         '// we are STILL in the 'alarm' state, so send the required
+         '// signal every 10 minutes..
+         transmit(blnAlarmSignal)
+      end if
+   end if
+  
+   if minutes = 60 then                  '// 1 minute
+     hours = hours + 1
+     minutes = 0
+   end if
+
+   if hours = 12 then                    '// 12 hours..
+      hours = 0
+      if state <> blnAlarmState then
+         if(blnAlarmSignal = true) then
+             transmit(false)
+         else
+             transmit(true)
+         end if
+        oldstate = state
+      end if
+   end if
+  
+  loop until 0 = 1
+end.
