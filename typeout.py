@@ -1,8 +1,9 @@
-# Usei pygame, pois não consegui imprimir cada letra separadamente com outras abordagens
-import pygame, sys
-import pygame.locals
 
-class bcolors:
+# PyGame possui uma entrada de dados que fornece uma melhor experiência para a jogabilidade
+import pygame, random, time, sys # Por esse motivo foi utilizado para capturar as teclas digitadas pelo jogador
+
+
+class bcolors: # Cores para as frases. Funciona em terminais Linux.
     HEADER = '\033[95m'
     OKBLUE = '\033[94m'
     OKGREEN = '\033[92m'
@@ -12,38 +13,93 @@ class bcolors:
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
 
-pygame.init()
-WIDTH = 1
-HEIGHT = 1
-windowSurface = pygame.display.set_mode((WIDTH, HEIGHT), pygame.NOFRAME)
+
+class Node: # Nó utilizado para guardar uma palavra
+    def __init__(self,key,n): 
+        self.left = None
+        self.right = None
+        self.val = key
+        self.name = n
+
+
+def search(root,key): # Procura na árvore
+    if root is None or root.val == key: 
+        return root 
+    if root.val < key: 
+        return search(root.right,key)  
+    return search(root.left,key)
+
+
+def insert(root,node): # Insere na árvore
+    if root is None: 
+        root = node 
+    else: 
+        if root.val < node.val: 
+            if root.right is None: 
+                root.right = node 
+            else: 
+                insert(root.right, node) 
+        else: 
+            if root.left is None: 
+                root.left = node 
+            else: 
+                insert(root.left, node) 
+
+pygame.init() # Inicia o PyGame
+windowSurface = pygame.display.set_mode((1, 1), pygame.NOFRAME) # Cria a janela para captura de entrada
 
 # Variaveis do jogo
-nivelDeDificuldade=[10,30,40];
-dificuldadeSelecionada=1;
-contaTecla=0;
-contaLetra=0;
-fator=125;
+nivelDeDificuldade=[25,35,45] # Quanto maior a dificuldade, mais o tempo da polícia é multiplicado
+dificuldadeDasPalavras=[0,1,0] # Ativa aleatório ou não
+dificuldadeSelecionada=1; # Variável usada para guardar a seleção
+random.seed(time.time())
+handicap=200 # Distancia da policia ganhada no início da partida
+
+contaTecla=0; # Quantas teclas foram apertadas
+letrasCorretas=0; # Contador p/ a comparação de palavras
+fator=125; # O fator começa em 125
+           # A cada palavra certa, ele diminui em 1
+           # Quanto menor o número, mais rápido as palavras obrigatórias aparecem
+
+# Carregamento de texto
 caminhoArquivo = open("arquivo.txt", "r");
 arquivoAberto = caminhoArquivo.read();
+
 palavra=""
 palavraEscrita=""
 on=True
 policiaPerseguindo=False
-iniciarJogo=False
+iniciadoJogo=False
 
-#windowSurface.fill(BLACK)
+# Armazena todas as palavras do arquivo em uma árvore binária
+r = Node(0,None)
+palavr= ""
+posicao = 0
+notFirstPass = False
+for x in range (len(arquivoAberto)):
 
-def findWord():
-    if( not(arquivoAberto[contaTecla].isalpha()) ) :
-        word=""
-        i=contaTecla+1
-        while (True):
-            if not(arquivoAberto[i].isalpha()):
-                word=arquivoAberto[contaTecla+1:i]
-                return word;
-            i+=1
-    return "";
+    if ( not(arquivoAberto[x].isalpha()) ) :
+        x+=1
+        
+        if x < len(arquivoAberto) and arquivoAberto[x].isalpha():
+            posicao = x
+            
+            while(x < len(arquivoAberto) and arquivoAberto[x].isalpha()):
+                palavr += arquivoAberto[x]
+                x+=1
+                
+            if len(palavr) > 1:
+                
+                if notFirstPass:
+                    insert(r,Node(posicao,palavr))
+                    
+                else:
+                    r = Node(posicao,palavr)
+                    notFirstPass = True;     
+            palavr = ""
 
+
+# Menu inicial
 print(r"""
                              __xxxxxxxxxxxxxxxx___.
                         _gxXXXXXXXXXXXXXXXXXXXXXXXX!x_
@@ -141,9 +197,11 @@ print()
 print("PRESS Q TO QUIT")
 
 while True:
-    if iniciarJogo:
+
+    if iniciadoJogo:
         seconds=(pygame.time.get_ticks()-start_ticks)/1000 #calculate how many seconds
-        if seconds*nivelDeDificuldade[dificuldadeSelecionada]>=contaTecla and policiaPerseguindo: # if more than 10 seconds close the game
+        
+        if seconds*nivelDeDificuldade[dificuldadeSelecionada] >= (contaTecla + handicap) and policiaPerseguindo: # if more than x seconds close the game
             print(bcolors.FAIL+r"""
                            _
       .::::::::::.        -(_)====u         .::::::::::.
@@ -159,40 +217,59 @@ while True:
       `::::::::::'                          `::::::::::'
 
             """+bcolors.ENDC)
-            print(bcolors.FAIL+"\n ********* WASTED! ********** \n"+bcolors.ENDC);
+            print(bcolors.FAIL+"\n **-**-** WASTED! **-**-** \n"+bcolors.ENDC);
             print("Final points:",contaTecla);
-            break;
+            sys.exit();
+        
         for event in pygame.event.get():
-            if findWord() and on == True:
-                palavra = findWord()
+
+            if contaTecla >= len(arquivoAberto):
+                print("\nYEAH YEAH, POLICE WILL NEVER GET YOU");
+                sys.exit()
+                
+            if on == True:
+                objeto = search(r,contaTecla)
+                if objeto != None:
+                    palavra = objeto.name
+                    
             if event.type in (pygame.KEYDOWN, pygame.KEYUP) and on:
                  print(arquivoAberto[contaTecla],end="",flush=True)
                  contaTecla+=1;
+                 
             if on == False:
+                
                 if event.type == pygame.KEYDOWN:
-                    if pygame.key.name(event.key).lower() == palavra[contaLetra].lower():
-                        print(palavra[contaLetra],end="",flush=True)
-                        contaLetra+=1;
-                    if contaLetra == len(palavra):
+                    
+                    if pygame.key.name(event.key).lower() == palavra[letrasCorretas].lower():
+                        print(palavra[letrasCorretas],end="",flush=True)
+                        letrasCorretas+=1;
+                        
+                    if letrasCorretas == len(palavra):
                         print()
-                        contaLetra=0;
+
+                        letrasCorretas=0;
                         contaTecla+=1;
-                        fator-=1;
-                        print(bcolors.BOLD + "LATENCY BETWEEN NSA AND YOU:"+ bcolors.ENDC,str(contaTecla-(seconds*30))+" ms")
+                        
+                        if fator > 50:
+                            fator-=1;
+                            
+                        print(bcolors.BOLD + " LATENCY BETWEEN FBI AND YOU: "+ bcolors.ENDC,str( (contaTecla + handicap) - (seconds*nivelDeDificuldade[dificuldadeSelecionada]))+" ms")
+
                         policiaPerseguindo = True
                         on = True;
-            if fator < 50:
-                fator = 50;
-            if len(palavra) > 0 and contaTecla%fator==0 and on == True:
-                print("\n"+bcolors.HEADER + palavra + bcolors.ENDC);
+                
+            if len(palavra) > 0 and contaTecla%random.randint(fator-dificuldadeDasPalavras[dificuldadeSelecionada], fator)==0 and on == True:
+                print("\n"+bcolors.HEADER + " " + palavra + " " + bcolors.ENDC);
                 on=False;
-            if event.type == pygame.locals.QUIT:
-                 pygame.quit()
-                 sys.exit()
+                
     else:
+        
         for event in pygame.event.get():
+            
             if event.type == pygame.KEYDOWN:
+                
                 if pygame.key.name(event.key) == "s":
+                    
                     print(r"""
                       :::!~!!!!!:.
                   .xUHWH!! !!?M88WHX:.
@@ -215,22 +292,34 @@ Wi.~!X$?!-~    : ?$$$B$Wu("**$RM!
 $R@i.~~ !     :   ~$$$$$B$$en:``
 ?MXT@Wx.~    :     ~"##*$$$$M~
                 """)
+                    
                     print("STARTING HACKING SESSION...");
+                    
                     print("HACKOS v0.00 - NO COPYRIGHTS")
+                    
                     print("SESSION READY. START TYPING.")
-                    start_ticks=pygame.time.get_ticks() #starter tick
-                    print(bcolors.WARNING+"\nWARNING: NSA IS TRYING TO TRACK YOUR LOCATION"+bcolors.ENDC)
-                    print(bcolors.WARNING+"RUN FOREST, RUN\n"+bcolors.ENDC)
-                    iniciarJogo = True;
+                    
+                                                        # "Ativa a polícia" - No caso, começa a contar os 
+                    start_ticks=pygame.time.get_ticks() # segundos que vão ser multiplicados pela dificuldade
+                                                        # escolhida, tentando assim vencer o jogador.
+                                                        
+                    print(bcolors.WARNING+"\n WARNING: FBI IS TRYING TO TRACK YOUR LOCATION. "+bcolors.ENDC)
+                    
+                    print(bcolors.WARNING+" IT'S BETTER FOR YOU TO START TYPING. RIGHT NOW. \n"+bcolors.ENDC)
+                    
+                    iniciadoJogo = True;
+                    
                 elif pygame.key.name(event.key) == "e":
                     dificuldadeSelecionada = 0;
                     print("\nEASY SELECTED")
+                    
                 elif pygame.key.name(event.key) == "n":
                     dificuldadeSelecionada = 1;
                     print("\nNORMAL SELECTED")
+                    
                 elif pygame.key.name(event.key) == "h":
                     dificuldadeSelecionada = 2;
                     print("\nHACKER MODE")
+                    
                 elif pygame.key.name(event.key) == "q":
                     pygame.quit()
-                    sys.exit()
